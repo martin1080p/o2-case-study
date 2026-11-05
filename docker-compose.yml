@@ -1,0 +1,7 @@
+services:
+  notebook:
+    build: .
+    ports: ["127.0.0.1:8889:8888"]  # localhost only - required because auth is disabled below
+    volumes: [.:/home/jovyan/work]  # rag.py, demo.ipynb, .env (GEMINI_API_KEY) and data/ shared with the host
+    working_dir: /home/jovyan/work
+    command: ["start-notebook.py", "--IdentityProvider.token=", "--ServerApp.password=", "--LabApp.default_url=/lab/tree/demo.ipynb"]
