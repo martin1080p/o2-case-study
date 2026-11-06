@@ -2,6 +2,7 @@
 
 Question answering over the [O2 store export](https://www.o2.cz/servis/prodejny-export/export.json) with **Gemini**
 (`gemini-embedding-001` + `gemini-2.5-flash`). Walkthrough with results: [`demo.ipynb`](demo.ipynb).
+Presentation (Czech): https://claude.ai/artifact/NofsN5EdquepQa67j95ErZ
 
 ```
 export.json ──► 1 chunk per store ──► embeddings (+ BM25 tokens) ──► data/index.json
@@ -16,7 +17,7 @@ question ──► hybrid search (BM25 + embeddings, RRF) ──► top 4 chunks
   plus all stores of a city the question names (*„prodejny v Brně“*, any Czech form).
 - **No hallucinations** – the prompt requires the answer to come from the context and the store to match
   (name, street, city). If it is not among the retrieved stores, the model answers `NO_MATCH` and the question is asked
-  again with more stores (`k = TOP_K + FALLBACK_STEP × attempt`: 4 → 24 → 44) – only the last attempt may state as a fact
+  again with more stores (`k = TOP_K + FALLBACK_STEP × attempt`: 4 → 24 → 44, the last attempt all stores) – only the last attempt may state as a fact
   that no such O2 store exists (retrieval may miss a real store). Tested in `evaluate.py` with non-existent stores
   (incl. the Sušice store from the assignment, which is not in the current export).
   A **grounding check** in code (`check_grounding`) replaces any answer whose phone number or e-mail is not in
