@@ -42,7 +42,7 @@ minikube start -p o2 --nodes 2 --driver docker --cpus 2 --memory 2g
 kubectl get nodes      # o2 (control-plane), o2-m02
 ```
 
-(`kubectl` can be `minikube -p o2 kubectl --`.)
+(Without a separate `kubectl`: `minikube -p o2 kubectl --`.)
 
 ## Deploy
 
@@ -67,7 +67,7 @@ How the requirements are met (`app.yaml`):
   `kubernetes.io/hostname` (max. 1 pod difference between nodes) → one pod of each per node,
 - **parts communicate** – frontend → `Service backend` (`ClusterIP`, internal only); only the frontend is exposed
   (`NodePort` 30080),
-- **rolling update** – `maxSurge: 1`, `maxUnavailable: 0` and a `readinessProbe` (see below).
+- **rolling update** – `maxSurge: 1`, `maxUnavailable: 0`, a `readinessProbe` and a `preStop` pause (see below).
 
 ## Rolling update (Figure 2)
 
@@ -86,8 +86,8 @@ kubectl rollout undo deploy/backend                # back to v1 if something goe
 ```
 
 [`demo.sh`](demo.sh) creates or starts the 2-node cluster if needed, builds and loads the images `hello:1` and
-`hello:2` if missing, waits for the cluster DNS, resets the
-backend to v1 and opens 3 terminals (`gnome-terminal`):
+`hello:2` if missing, resets the backend to v1, waits until the app answers and opens 3 terminals
+(`gnome-terminal`):
 
 | Terminal | Shows |
 |---|---|
@@ -109,17 +109,19 @@ What Kubernetes does, pod by pod:
 
 1. starts **one new pod** (v2) next to the two old ones (`maxSurge: 1`),
 2. waits until its `readinessProbe` (`GET /healthz`) passes – only then the Service sends it traffic,
-3. stops **one old pod** – never before a new one is ready (`maxUnavailable: 0`); the old pod gets SIGTERM, the
-   Service stops routing to it,
+3. stops **one old pod** – never before a new one is ready (`maxUnavailable: 0`): the Service stops routing to it,
+   the pod keeps serving 5 s more (`preStop`) for requests already on their way, then gets SIGTERM,
 4. repeats until all pods run v2. During the update both versions answer; afterwards only v2.
 
-Measured on this cluster: requests every 0.1–0.2 s during 7 updates – **0 failed** out of 990. With the final
-`app.yaml` the two new pods always ran on different nodes and the old pods were gone ~5 s after the update.
+Measured on this cluster: a request every 0.3 s during 8 rolling updates (6 backend, 2 frontend) – **0 failed**
+out of 265; afterwards one backend and one frontend pod on each node again.
 
-Two details found by that test:
+Details found by testing:
 
 - `matchLabelKeys: [pod-template-hash]` – without it the spread counts old and new pods together: when the old
   pods were leaving, both new pods landed on the same node,
+- `preStop` pause – without it an old pod can exit before every node stopped routing to it and a request
+  fails (seen in testing),
 - `signal.signal(SIGTERM, …)` in the apps – Python as PID 1 ignores SIGTERM, so each old pod waited the full 30 s
   grace period before being killed.
 

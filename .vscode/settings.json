@@ -1,0 +1,3 @@
+{
+    "window.title": "${dirty}${activeEditorShort}${separator}o2-case-study${separator}${profileName}${separator}${appName}"
+}

@@ -35,6 +35,8 @@ spec:
           readinessProbe:  # traffic only to pods that answer
             httpGet: {path: /healthz, port: 8000}
             periodSeconds: 2
+          lifecycle:  # on shutdown keep serving 5 s while the Service stops routing here, then SIGTERM
+            preStop: {sleep: {seconds: 5}}
           resources:
             requests: {cpu: 50m, memory: 32Mi}
             limits: {memory: 64Mi}
@@ -78,6 +80,8 @@ spec:
           readinessProbe:
             httpGet: {path: /healthz, port: 8080}
             periodSeconds: 2
+          lifecycle:  # on shutdown keep serving 5 s while the Service stops routing here, then SIGTERM
+            preStop: {sleep: {seconds: 5}}
           resources:
             requests: {cpu: 50m, memory: 32Mi}
             limits: {memory: 64Mi}

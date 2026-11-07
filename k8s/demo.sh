@@ -12,7 +12,7 @@ case "${1:-}" in
   requests)
     URL="http://$(minikube -p "$P" ip):30080/"
     echo "GET $URL every 0.3 s"
-    while true; do curl -s -m 2 "$URL" | sed -n 2p || echo FAILED; sleep 0.3; done ;;
+    while true; do curl -s -m 2 "$URL" | tail -n 1 || echo FAILED; sleep 0.3; done ;;  # last line: backend or error
   pods)
     # pod name = backend-<ReplicaSet hash>-<id>; the hash changes with every version -> colour by it,
     # in order of appearance (blue = the version running at the start, green = the new one, ...)
@@ -26,7 +26,7 @@ case "${1:-}" in
     done ;;
   "")
     minikube status -p "$P" >/dev/null 2>&1 || minikube start -p "$P" --nodes 2 --driver docker --cpus 2 --memory 2g
-    minikube profile "$P" >/dev/null  # so a plain `kubectl` (alias of `minikube kubectl --`) talks to this cluster
+    kubectl config use-context "$P" >/dev/null  # a plain `kubectl` in terminal 3 talks to this cluster
     k -n kube-system rollout status deploy/coredns >/dev/null  # cluster DNS - the frontend finds the backend by name
     # images for the demo: v1 runs, v2 is the update
     for v in 1 2; do
@@ -36,6 +36,8 @@ case "${1:-}" in
     k set image deploy/backend backend=hello:1 >/dev/null  # start from v1 (no-op if already there)
     k rollout status deploy/backend >/dev/null
     k rollout status deploy/frontend >/dev/null
+    # after a restart the Deployments report the old "ready" state for a while - wait until the app really answers
+    for _ in $(seq 60); do curl -s -m 2 "http://$(minikube -p "$P" ip):30080/" | grep -q Hello && break; sleep 1; done
 
     gnome-terminal --title "1 · requests" -- "$PWD/demo.sh" requests
     gnome-terminal --title "2 · backend pods" -- "$PWD/demo.sh" pods
