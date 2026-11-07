@@ -3,6 +3,7 @@
 Question answering over the [O2 store export](https://www.o2.cz/servis/prodejny-export/export.json) with **Gemini**
 (`gemini-embedding-001` + `gemini-2.5-flash`). Walkthrough with results: [`demo.ipynb`](demo.ipynb).
 Presentation (Czech): https://claude.ai/artifact/NofsN5EdquepQa67j95ErZ
+Part 2 (Kubernetes): [`k8s/`](k8s/README.md)
 
 ```
 export.json ──► 1 chunk per store ──► embeddings (+ BM25 tokens) ──► data/index.json

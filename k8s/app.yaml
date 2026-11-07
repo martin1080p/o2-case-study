@@ -1,0 +1,85 @@
+# Backend: 2 replicas, one per node, updated without downtime. Frontend: 1 replica, reachable from outside.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: backend}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # start one new pod first...
+      maxUnavailable: 0  # ...and stop an old one only when the new one is ready -> no downtime
+  template:
+    metadata:
+      labels: {app: backend}  # the Service finds its pods by this label
+    spec:
+      topologySpreadConstraints:  # spread the replicas over the nodes (Figure 1)
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app: backend}
+          matchLabelKeys: [pod-template-hash]  # count only pods of the same version - else old pods
+                                               # leaving during a rolling update skew where new ones go
+      containers:
+        - name: backend
+          image: hello:1
+          command: ["python", "backend.py"]
+          ports: [{containerPort: 8000}]
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          readinessProbe:  # traffic only to pods that answer
+            httpGet: {path: /healthz, port: 8000}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend  # DNS name inside the cluster: http://backend:8000
+spec:
+  type: ClusterIP  # internal only
+  selector: {app: backend}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: frontend}
+  template:
+    metadata:
+      labels: {app: frontend}
+    spec:
+      containers:
+        - name: frontend
+          image: hello:1
+          command: ["python", "frontend.py"]
+          ports: [{containerPort: 8080}]
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  type: NodePort  # reachable from outside the cluster on <node IP>:30080
+  selector: {app: frontend}
+  ports: [{port: 8080, targetPort: 8080, nodePort: 30080}]
