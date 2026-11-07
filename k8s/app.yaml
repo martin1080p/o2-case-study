@@ -1,4 +1,4 @@
-# Backend: 2 replicas, one per node, updated without downtime. Frontend: 1 replica, reachable from outside.
+# Backend and frontend: 2 replicas each, one per node, updated without downtime. Only the frontend is reachable from outside.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -53,13 +53,20 @@ kind: Deployment
 metadata:
   name: frontend
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: {app: frontend}
   template:
     metadata:
       labels: {app: frontend}
     spec:
+      topologySpreadConstraints:  # one frontend per node, like the backend - a node down never takes the app down
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app: frontend}
+          matchLabelKeys: [pod-template-hash]
       containers:
         - name: frontend
           image: hello:1

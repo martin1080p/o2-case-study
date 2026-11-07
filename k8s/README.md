@@ -10,6 +10,9 @@ flowchart LR
             subgraph p1["Pod backend"]
                 c1["Container backend<br/>image hello:1 · python backend.py"]
             end
+            subgraph p4["Pod frontend"]
+                c4["Container frontend<br/>image hello:1 · python frontend.py"]
+            end
         end
         subgraph n2["Node o2-m02"]
             subgraph p2["Pod backend"]
@@ -24,8 +27,8 @@ flowchart LR
 
 - **cluster** – two nodes managed as one; you say what should run (`app.yaml`), Kubernetes decides where,
 - **node** – one machine (here a Docker container started by minikube); `o2` also runs the control plane,
-- **pod** – the unit Kubernetes places on a node, with its own IP; backend has 2 pods (one per node), frontend 1
-  (on whichever node the scheduler picks),
+- **pod** – the unit Kubernetes places on a node, with its own IP; backend and frontend have 2 pods each, one per
+  node – if a node goes down, the other one still runs the whole app,
 - **container** – the running app from the image `hello:1`; one container per pod here.
 
 How the parts talk to each other (Services) is described in [Deploy](#deploy).
@@ -47,21 +50,21 @@ kubectl get nodes      # o2 (control-plane), o2-m02
 docker build -t hello:1 .
 minikube -p o2 image load hello:1      # copy the image to both nodes (no registry needed locally)
 kubectl apply -f app.yaml
-kubectl get pods -o wide               # backend: one pod on each node
+kubectl get pods -o wide               # one backend and one frontend pod on each node
 
 curl http://$(minikube -p o2 ip):30080/
 # frontend frontend-66bf48498c-fdfm4 on o2-m02
 #   -> backend backend-84d68d56bf-cpdmk on o2 (v1): Hello from the backend
 ```
 
-The request goes to node `o2`, the frontend runs on `o2-m02` – kube-proxy forwards NodePort traffic to the pod
-wherever it runs. The frontend calls `http://backend:8000`: cluster DNS gives the Service IP and the Service picks one
+The request may go to the IP of either node: kube-proxy forwards NodePort traffic to one of the two frontend pods,
+on this node or the other one. The frontend calls `http://backend:8000`: cluster DNS gives the Service IP and the Service picks one
 of the backend pods (by the label `app: backend`), so repeated requests alternate between the two nodes.
 
 How the requirements are met (`app.yaml`):
 
-- **components on multiple nodes** – backend `replicas: 2` with `topologySpreadConstraints` over
-  `kubernetes.io/hostname` (max. 1 pod difference between nodes) → one pod per node,
+- **components on multiple nodes** – backend and frontend `replicas: 2` each with `topologySpreadConstraints` over
+  `kubernetes.io/hostname` (max. 1 pod difference between nodes) → one pod of each per node,
 - **parts communicate** – frontend → `Service backend` (`ClusterIP`, internal only); only the frontend is exposed
   (`NodePort` 30080),
 - **rolling update** – `maxSurge: 1`, `maxUnavailable: 0` and a `readinessProbe` (see below).
