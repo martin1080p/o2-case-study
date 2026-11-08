@@ -67,7 +67,9 @@ How the requirements are met (`app.yaml`):
   `kubernetes.io/hostname` (max. 1 pod difference between nodes) → one pod of each per node,
 - **parts communicate** – frontend → `Service backend` (`ClusterIP`, internal only); only the frontend is exposed
   (`NodePort` 30080),
-- **rolling update** – `maxSurge: 1`, `maxUnavailable: 0`, a `readinessProbe` and a `preStop` pause (see below).
+- **rolling update** – `maxSurge: 1`, `maxUnavailable: 0`, a `readinessProbe` and a `preStop` pause (see below),
+- **node failure** – short `tolerations` and `nodeTaintsPolicy: Honor`: the pods of a dead node are recreated on the
+  live one ([Node crash](#node-crash)).
 
 ## Rolling update (Figure 2)
 
@@ -91,19 +93,20 @@ kubectl rollout undo deploy/backend                # back to v1 if something goe
 
 | Terminal | Shows |
 |---|---|
-| 1 · requests | a request every 0.3 s – which backend pod, node and version answered, `FAILED` on an error |
-| 2 · backend pods | `kubectl get pods -l app=backend -o wide -w` – pods appearing, becoming ready, terminating; one colour per version (blue = v1 at the start, green = the new one) |
-| 3 · rolling update | an empty shell – start the update here |
+| 1 · requests | a request every 0.3 s – which frontend and backend pod answered, on which node, which version; `FAILED` on an error |
+| 2 · pods | every change of a backend or frontend pod (`kubectl get pods -w`): image, ready, status, node; blue = `hello:1`, green = `hello:2` |
+| 3 · commands | an empty shell for the commands below |
 
 In terminal 3 run:
 
 ```bash
-kubectl set image deploy/backend backend=hello:2
+./demo.sh upgrade     # rolling update of the backend to v2 (kubectl set image deploy/backend backend=hello:2)
+./demo.sh downgrade   # and back to v1, also a rolling update
 ```
 
-Terminal 2 shows one new pod start, turn `1/1` (ready) and only then one old pod terminate – twice. Terminal 1
-switches from `(v1)` to a mix of `(v1)`/`(v2)` and then only `(v2)`, with no `FAILED`. Back to v1, also without
-downtime: `kubectl rollout undo deploy/backend`. Running `./demo.sh` again starts over from v1.
+Terminal 2 shows one green pod start (`ContainerCreating` → `Running` → `1/1` ready) and only then one blue pod
+terminate – twice. Terminal 1 switches from `(v1)` to a mix of `(v1)`/`(v2)` and then only `(v2)`, with no
+`FAILED`. Running `./demo.sh` again starts over from v1.
 
 What Kubernetes does, pod by pod:
 
@@ -124,6 +127,38 @@ Details found by testing:
   fails (seen in testing),
 - `signal.signal(SIGTERM, …)` in the apps – Python as PID 1 ignores SIGTERM, so each old pod waited the full 30 s
   grace period before being killed.
+
+## Node crash
+
+The same demo can show what happens when a node dies – terminal 2 shows both the backend and the frontend pods
+moving. In terminal 3:
+
+```bash
+./demo.sh crash     # docker kill o2-m02 - a hard crash, as if the machine lost power
+./demo.sh recover   # minikube starts the node again, then a rolling restart spreads the pods over both nodes
+```
+
+Measured on this cluster (a request every 0.3 s):
+
+| Time | What happens |
+|---|---|
+| 0 s | `o2-m02` crashes |
+| 0–47 s | Kubernetes does not know yet: requests routed to the pods on the dead node time out – **20 of 24 failed** |
+| 47 s | the control plane marks the node `NotReady` and takes its pods out of the Services – **0 failed from here on** |
+| 56 s | 10 s later (`tolerationSeconds: 10`) the pods are evicted; their replacements start on `o2` and are ready in 3 s – again 2 + 2 pods |
+| `recover` | the node is back in ~16 s; Kubernetes never moves running pods back by itself, so a rolling restart spreads them again |
+
+What makes it work (`app.yaml`):
+
+- `tolerations` with `tolerationSeconds: 10` – by default the pods of an unreachable node are evicted only after
+  5 minutes,
+- `nodeTaintsPolicy: Honor` – the dead node gets an `unreachable` taint; without this the spread still counted it
+  and the replacement pods stayed `Pending`.
+
+The ~47 s before the crash is noticed are the node heartbeat timeout (`node-monitor-grace-period`, 40 s by default).
+It can be shortened (kubelet reports more often, the controller gives up sooner), at the cost of false alarms on a
+slow network; in production a cloud load balancer also stops sending traffic to a dead node within seconds via its
+health probes.
 
 ## Questions
 

@@ -16,6 +16,9 @@ spec:
     metadata:
       labels: {app: backend}  # the Service finds its pods by this label
     spec:
+      tolerations:  # node down -> move its pods 10 s after it is detected (default 5 min)
+        - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 10}
+        - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 10}
       topologySpreadConstraints:  # spread the replicas over the nodes (Figure 1)
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -24,6 +27,7 @@ spec:
             matchLabels: {app: backend}
           matchLabelKeys: [pod-template-hash]  # count only pods of the same version - else old pods
                                                # leaving during a rolling update skew where new ones go
+          nodeTaintsPolicy: Honor  # skip a dead node (tainted) - its pods' replacements may go to the live one
       containers:
         - name: backend
           image: hello:1
@@ -62,6 +66,9 @@ spec:
     metadata:
       labels: {app: frontend}
     spec:
+      tolerations:  # node down -> move its pods 10 s after it is detected (default 5 min)
+        - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 10}
+        - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 10}
       topologySpreadConstraints:  # one frontend per node, like the backend - a node down never takes the app down
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -69,6 +76,7 @@ spec:
           labelSelector:
             matchLabels: {app: frontend}
           matchLabelKeys: [pod-template-hash]
+          nodeTaintsPolicy: Honor
       containers:
         - name: frontend
           image: hello:1
